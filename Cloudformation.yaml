@@ -477,7 +477,7 @@ Resources:
     Properties:
       InstanceType: t2.micro
       ImageId: !Ref LatestAmiId
-      KeyName: ssh
+      KeyName: !Ref SSHKey
       SecurityGroupIds:
         - !Ref SecurityGroupProvisioning
       SubnetId: !Ref PublicSubnetA
@@ -554,7 +554,7 @@ Resources:
       LaunchTemplateData:
         InstanceType: t2.micro
         ImageId: !Ref LatestAmiId
-        KeyName: ssh
+        KeyName: !Ref SSHKey
         SecurityGroupIds:
           - !Ref SecurityGroupASG
         UserData: !Base64
@@ -596,3 +596,31 @@ Resources:
         - Key: Name
           Value: AutoScalingGroup
           PropagateAtLaunch: true
+
+  # Admin Server
+  AdminServer:
+    Type: AWS::EC2::Instance
+    DependsOn:
+      - WordPressProvisioning
+    Properties:
+      InstanceType: t2.micro
+      ImageId: !Ref LatestAmiId
+      KeyName: !Ref SSHKey
+      SecurityGroupIds:
+        - !Ref SecurityGroupProvisioning
+      SubnetId: !Ref PublicSubnetA
+      UserData: 
+        Fn::Base64: !Sub |
+            #!/bin/bash
+            dnf update -y
+            dnf install nfs-utils -y
+            mkdir -p /var/www/html
+            mount -t nfs4 -o nfsvers=4.1 ${EFS}.efs.${AWS::Region}.amazonaws.com:/ /var/www/html
+            dnf install wget php-mysqlnd httpd php-fpm php-mysqli mariadb105-server php-json php php-devel -y
+            sed -i 's/^\( *AllowOverride\) None/\1 All/' /etc/httpd/conf/httpd.conf
+            systemctl start httpd
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key: Name
+                Value: AdminServer
