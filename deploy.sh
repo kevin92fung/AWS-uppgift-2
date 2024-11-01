@@ -1,6 +1,6 @@
 #!/bin/bash
 aws cloudformation deploy \
-  --template-file CloudFormation3.yaml \
+  --template-file CloudFormation.yaml \
   --stack-name uppgift2 \
   --parameter-overrides \
     MasterUsername=admin \
