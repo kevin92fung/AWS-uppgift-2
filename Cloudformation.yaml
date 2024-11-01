@@ -1,15 +1,19 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: This CloudFormation template automates the setup of a 
-WordPress environment on AWS, utilizing Elastic File System (EFS) 
-for shared storage and Amazon RDS for the database. It provisions 
-the necessary infrastructure, including a Virtual Private Cloud 
-(VPC), security groups, subnets, and an Application Load Balancer 
-(ALB). The template is dynamic, using parameters to allow for 
-flexible configuration based on user needs. It also includes a 
-UserData script to automatically install and configure WordPress, 
-ensuring a streamlined deployment process while emphasizing security 
-by recommending the removal of the provisioning server after 
-installation.
+Description: |
+  This CloudFormation template automates the setup of a WordPress 
+  environment on AWS. It features Elastic File System (EFS) for 
+  shared storage, allowing all instances to access the same files. 
+  Amazon RDS provides a managed database solution for WordPress, 
+  ensuring reliability and scalability. The template provisions 
+  essential infrastructure components, including a Virtual Private 
+  Cloud (VPC) for secure networking, security groups to control 
+  traffic access, and subnets to isolate resources. An Application 
+  Load Balancer (ALB) is included to distribute incoming traffic 
+  for better availability. The template uses dynamic parameters, 
+  enabling flexible configuration based on user needs. A UserData 
+  script is included to automate the installation and configuration 
+  of WordPress seamlessly. To enhance security, it is recommended 
+  to remove the provisioning server after installation.
 
 Parameters:
   LatestAmiId:
