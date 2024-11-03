@@ -1,0 +1,623 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: |
+  This CloudFormation template automates the setup of a WordPress 
+  environment on AWS. It features Elastic File System (EFS) for 
+  shared storage, allowing all instances to access the same files. 
+  Amazon RDS provides a managed database solution for WordPress, 
+  ensuring reliability and scalability. The template provisions 
+  essential infrastructure components, including a Virtual Private 
+  Cloud (VPC) for secure networking, security groups to control 
+  traffic access, and subnets to isolate resources. An Application 
+  Load Balancer (ALB) is included to distribute incoming traffic 
+  for better availability. The template uses dynamic parameters, 
+  enabling flexible configuration based on user needs. A UserData 
+  script is included to automate the installation and configuration 
+  of WordPress seamlessly. To enhance security, it is recommended 
+  to remove the provisioning server after installation.
+
+Parameters:
+  AdminIP:
+    Type: String
+    Default: 0.0.0.0/0
+    Description: The IP Address of the admin.
+    
+  LatestAmiId:
+    Description: Region specific image from the Parameter Store
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+
+  SSHKey:
+    Type: String
+    Description: Name of the ssh kkey pair.
+
+  MasterUsername:
+    Type: String
+    Default: admin
+    Description: The master username for the RDS database
+
+  MasterUserPassword:
+    Type: String
+    NoEcho: true
+    Description: The master password for the RDS database
+
+  DBName:
+    Type: String
+    Default: "wordpressdb"
+    Description: The name of the database to create
+
+  WPTitle:
+    Type: String
+    Default: "My WordPress Site"
+    Description: "The title of your WordPress site"
+
+  WPAdminUser:
+    Type: String
+    Default: "admin"
+    Description: "The username for the WordPress admin account"
+
+  WPAdminPassword:
+    Type: String
+    NoEcho: true
+    Description: "The password for the WordPress admin account"
+
+  WPAdminEmail:
+    Type: String
+    Default: "admin@example.com"
+    Description: "The email address for the WordPress admin account"
+
+Resources:
+  # Create VPC
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: VPC
+
+  # Create Internet Gateway
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: InternetGateway
+
+  # Attach Internet Gateway to VPC
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  # Create Public Route Table
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: PublicRouteTable
+
+  # Create Route to Internet for Public Route Table
+  PublicRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  # Create Public Subnets
+  PublicSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: eu-west-1a
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: PublicSubnetA
+
+  PublicSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: eu-west-1b
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: PublicSubnetB
+
+  PublicSubnetC:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.3.0/24
+      AvailabilityZone: eu-west-1c
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: PublicSubnetC
+
+  # Associate Public Route Table with Public Subnets
+  PublicSubnetARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetA
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnetBRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetB
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnetCRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetC
+      RouteTableId: !Ref PublicRouteTable
+
+  # Create Private Route Table
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: PrivateRouteTable
+
+  # Create Private Subnets
+  PrivateSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.4.0/24
+      AvailabilityZone: eu-west-1a
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: PrivateSubnetA
+
+  PrivateSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.5.0/24
+      AvailabilityZone: eu-west-1b
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: PrivateSubnetB
+
+  PrivateSubnetC:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.6.0/24
+      AvailabilityZone: eu-west-1c
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: PrivateSubnetC
+
+  # Associate Private Route Table with Private Subnets
+  PrivateSubnetARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetA
+      RouteTableId: !Ref PrivateRouteTable
+
+  PrivateSubnetBRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetB
+      RouteTableId: !Ref PrivateRouteTable
+
+  PrivateSubnetCRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetC
+      RouteTableId: !Ref PrivateRouteTable
+
+
+  # Security Group ALB
+  SecurityGroupALB:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow HTTP and HTTPS to ALB
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: ALBSecurityGroup
+
+  # Security Group Provisioning Server
+  SecurityGroupProvisioning:
+    Type: AWS::EC2::SecurityGroup
+    DependsOn: SecurityGroupALB
+    Properties:
+      GroupDescription: Allow SSH and HTTP to provisioning server
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref AdminIP
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: !Ref AdminIP
+      Tags:
+        - Key: Name
+          Value: ProvisioningSecurityGroup
+
+  # Security Group ASG
+  SecurityGroupASG:
+    Type: AWS::EC2::SecurityGroup
+    DependsOn: SecurityGroupProvisioning
+    Properties:
+      GroupDescription: Allow HTTP from ALB to ASG
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !Ref SecurityGroupALB
+      Tags:
+        - Key: Name
+          Value: ASGSecurityGroup
+
+  # Security Group EFS
+  SecurityGroupEFS:
+    Type: AWS::EC2::SecurityGroup
+    DependsOn:
+      - SecurityGroupProvisioning
+      - SecurityGroupASG
+    Properties:
+      GroupDescription: Allow NFS from Provisioning server and ASG
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 2049
+          ToPort: 2049
+          SourceSecurityGroupId: !Ref SecurityGroupProvisioning
+        - IpProtocol: tcp
+          FromPort: 2049
+          ToPort: 2049
+          SourceSecurityGroupId: !Ref SecurityGroupASG
+      Tags:
+        - Key: Name
+          Value: EFSSecurityGroup
+
+  # Security Group RDS
+  SecurityGroupRDS:
+    Type: AWS::EC2::SecurityGroup
+    DependsOn:
+      - SecurityGroupProvisioning
+      - SecurityGroupASG
+    Properties:
+      GroupDescription: Allow RDS access from Provisioning server and ASG
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          SourceSecurityGroupId: !Ref SecurityGroupProvisioning
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          SourceSecurityGroupId: !Ref SecurityGroupASG
+      Tags:
+        - Key: Name
+          Value: RDSSecurityGroup
+
+  # Create EFS
+  EFS:
+    Type: AWS::EFS::FileSystem
+    Properties:
+      FileSystemTags:
+        - Key: Name
+          Value: EFS
+      BackupPolicy:
+        Status: ENABLED
+      LifecyclePolicies:
+        - TransitionToIa: AFTER_30_DAYS
+        - TransitionToArchive: AFTER_90_DAYS
+      PerformanceMode: generalPurpose
+      Encrypted: true
+      ThroughputMode: elastic
+
+  #Create Mount Target
+  EFSMountTargetA:
+    Type: AWS::EFS::MountTarget
+    DependsOn: EFS
+    Properties:
+      FileSystemId: !Ref EFS
+      SubnetId: !Ref PrivateSubnetA
+      SecurityGroups:
+        - !GetAtt SecurityGroupEFS.GroupId
+
+  EFSMountTargetB:
+    Type: AWS::EFS::MountTarget
+    DependsOn: EFS
+    Properties:
+      FileSystemId: !Ref EFS
+      SubnetId: !Ref PrivateSubnetB
+      SecurityGroups:
+        - !GetAtt SecurityGroupEFS.GroupId
+
+  EFSMountTargetC:
+    Type: AWS::EFS::MountTarget
+    DependsOn: EFS
+    Properties:
+      FileSystemId: !Ref EFS
+      SubnetId: !Ref PrivateSubnetC
+      SecurityGroups:
+        - !GetAtt SecurityGroupEFS.GroupId
+
+  #Create  Application Load Balancer
+  ALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    DependsOn:
+      - PublicSubnetA
+      - PublicSubnetB
+      - PublicSubnetC
+      - SecurityGroupALB
+    Properties:
+      Name: WordPressLoadBalancer
+      Subnets:
+        - !Ref PublicSubnetA
+        - !Ref PublicSubnetB
+        - !Ref PublicSubnetC
+      SecurityGroups:
+        - !Ref SecurityGroupALB
+      Scheme: internet-facing
+      LoadBalancerAttributes:
+        - Key: idle_timeout.timeout_seconds
+          Value: 60
+      Tags:
+        - Key: Name
+          Value: ALB
+
+  # Create Target Group for ALB
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    DependsOn:
+      - VPC
+    Properties:
+      Name: TargetGroup
+      Port: 80
+      Protocol: HTTP
+      VpcId: !Ref VPC
+      TargetType: instance
+      HealthCheckIntervalSeconds: 30
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 5
+      UnhealthyThresholdCount: 2
+      Tags:
+        - Key: Name
+          Value: TargetGroup
+
+  # Create Listener for ALB
+  LoadBalancerListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    DependsOn:
+      - TargetGroup
+      - ALB
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+      LoadBalancerArn: !Ref ALB
+      Port: 80
+      Protocol: HTTP
+
+  #Create RDS Subnet Group
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Description of subnet group
+      SubnetIds:
+        - !Ref PrivateSubnetA
+        - !Ref PrivateSubnetB
+        - !Ref PrivateSubnetC
+      Tags:
+        - Key: Name
+          Value: DBSubnetGroup
+
+  # Create RDS
+  RDS:
+    Type: AWS::RDS::DBInstance
+    DependsOn: SecurityGroupRDS
+    Properties:
+      DBInstanceIdentifier: MariaDB
+      AllocatedStorage: 20
+      DBInstanceClass: db.t4g.micro
+      Engine: mariadb
+      EngineVersion: 11.4.3
+      MasterUsername: !Ref MasterUsername
+      MasterUserPassword: !Ref MasterUserPassword
+      DBName: !Ref DBName
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      VPCSecurityGroups:
+        - !GetAtt SecurityGroupRDS.GroupId
+      MultiAZ: false
+      MaxAllocatedStorage: 1000
+      StorageType: gp3
+      StorageEncrypted: true
+      BackupRetentionPeriod: 0 # 0 st??nger av backup, ??ndra till antal dagar backupp ska sparas..
+      Tags:
+        - Key: Name
+          Value: RDS
+
+  # Create Provisioning Server
+  WordPressProvisioning:
+    Type: AWS::EC2::Instance
+    DependsOn:
+      - SecurityGroupProvisioning
+      - EFSMountTargetA
+      - EFSMountTargetB
+      - EFSMountTargetC
+      - RDS
+      - ALB
+    Properties:
+      InstanceType: t2.micro
+      ImageId: !Ref LatestAmiId
+      KeyName: !Ref SSHKey
+      SecurityGroupIds:
+        - !Ref SecurityGroupProvisioning
+      SubnetId: !Ref PublicSubnetA
+      UserData: 
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          # Update all packages to the latest version
+          dnf update -y
+          # Install the NFS utilities to allow mounting of EFS (Elastic File System)
+          dnf install nfs-utils -y
+          # Create a directory for the website files
+          mkdir -p /var/www/html
+          # Mount the Amazon EFS file system to the /var/www/html directory
+          mount -t nfs4 -o nfsvers=4.1 ${EFS}.efs.${AWS::Region}.amazonaws.com:/ /var/www/html
+          # Install required packages: wget, PHP, Apache HTTP Server, and MariaDB
+          dnf install -y wget php-mysqlnd httpd php-fpm php-mysqli mariadb105-server php-json php php-devel php-gd
+          # Start the Apache HTTP Server
+          systemctl start httpd
+          # Download the latest version of WordPress
+          wget https://wordpress.org/latest.tar.gz
+          # Extract the WordPress archive
+          tar -xzf latest.tar.gz
+          # Copy the sample WordPress configuration file to create a new configuration
+          cp wordpress/wp-config-sample.php wordpress/wp-config.php
+          # Set database configuration details in the wp-config file
+          sed -i "s/database_name_here/${DBName}/" wordpress/wp-config.php
+          sed -i "s/username_here/${MasterUsername}/" wordpress/wp-config.php
+          sed -i "s/password_here/${MasterUserPassword}/" wordpress/wp-config.php
+          sed -i "s/localhost/${RDS.Endpoint.Address}/" wordpress/wp-config.php
+          sed -i "1 a\define('WP_HOME', 'http://${ALB.DNSName}');" wordpress/wp-config.php
+          sed -i "2 a\define('WP_SITEURL', 'http://${ALB.DNSName}');" wordpress/wp-config.php
+          # Fetch security salts from WordPress API and add to configuration file
+          curl -s https://api.wordpress.org/secret-key/1.1/salt/ >> new-salts.php
+          sed -i '/AUTH_KEY/,/NONCE_SALT/ {
+            /AUTH_KEY/ r new-salts.php
+            d
+          }' wordpress/wp-config.php
+          # Copy WordPress files to the web root directory
+          cp -r wordpress/* /var/www/html/
+          # Update the Apache configuration to allow .htaccess overrides in the web root
+          sed -i 's/^\( *AllowOverride\) None/\1 All/' /etc/httpd/conf/httpd.conf
+          # Set ownership and permissions for web files and directories
+          chown -R apache:apache /var/www
+          chmod 2775 /var/www
+          # Set permissions for all directories to allow group write and setgid
+          find /var/www -type d -exec chmod 2775 {} \;
+          # Set permissions for all files to read and write for the owner and read-only for others
+          find /var/www -type f -exec chmod 0644 {} \;
+          # Restart the Apache service to apply changes
+          systemctl restart httpd
+          # Install WP-CLI
+          curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
+          chmod +x wp-cli.phar
+          mv wp-cli.phar /usr/local/bin/wp
+          # Install WordPress using WP-CLI as the appropriate user
+          cd /var/www/html
+          wp core install --url=${ALB.DNSName} --title='${WPTitle}' --admin_user=${WPAdminUser} --admin_password=${WPAdminPassword} --admin_email=${WPAdminEmail} --allow-root
+          # Clean up downloaded files
+          rm -rf ~/latest.tar.gz ~/wordpress ~/new-salts.php
+
+      Tags:
+        - Key: Name
+          Value: WordPressProvisioningServer
+
+  # Create Launch Template for LAMP servers
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    DependsOn:
+      - WordPressProvisioning
+    Properties:
+      LaunchTemplateName: LampServer
+      LaunchTemplateData:
+        InstanceType: t2.micro
+        ImageId: !Ref LatestAmiId
+        KeyName: !Ref SSHKey
+        SecurityGroupIds:
+          - !Ref SecurityGroupASG
+        UserData: !Base64
+          Fn::Sub: |
+            #!/bin/bash
+            dnf update -y
+            dnf install nfs-utils -y
+            mkdir -p /var/www/html
+            mount -t nfs4 -o nfsvers=4.1 ${EFS}.efs.${AWS::Region}.amazonaws.com:/ /var/www/html
+            dnf install wget php-mysqlnd httpd php-fpm php-mysqli mariadb105-server php-json php php-devel -y
+            sed -i 's/^\( *AllowOverride\) None/\1 All/' /etc/httpd/conf/httpd.conf
+            systemctl start httpd
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key: Name
+                Value: LAMPServer
+
+  # Create Auto Scaling Group for WordPress
+  ASG:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    DependsOn:
+      - WordPressProvisioning
+    Properties:
+      AutoScalingGroupName: !Sub AutoScalingGroup
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber
+      MinSize: 1
+      MaxSize: 3
+      DesiredCapacity: 1
+      VPCZoneIdentifier:
+        - !Ref PublicSubnetA
+        - !Ref PublicSubnetB
+        - !Ref PublicSubnetC
+      TargetGroupARNs:
+        - !Ref TargetGroup
+      Tags:
+        - Key: Name
+          Value: AutoScalingGroup
+          PropagateAtLaunch: true
+
+  # Create Provisioning Server
+  AdminServer:
+    Type: AWS::EC2::Instance
+    DependsOn:
+      - ASG
+    Properties:
+      InstanceType: t2.micro
+      ImageId: !Ref LatestAmiId
+      KeyName: !Ref SSHKey
+      SecurityGroupIds:
+        - !Ref SecurityGroupProvisioning
+      SubnetId: !Ref PublicSubnetA
+      UserData: 
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          dnf update -y
+          dnf install nfs-utils -y
+          mkdir -p /var/www/html
+          mount -t nfs4 -o nfsvers=4.1 ${EFS}.efs.${AWS::Region}.amazonaws.com:/ /var/www/html
+          echo "${EFS}.efs.${AWS::Region}.amazonaws.com:/ /var/www/html nfs4 defaults,_netdev 0 0" >> /etc/fstab
+          dnf install wget php-mysqlnd httpd php-fpm php-mysqli mariadb105-server php-json php php-devel -y
+          sed -i 's/^\( *AllowOverride\) None/\1 All/' /etc/httpd/conf/httpd.conf
+          systemctl start httpd
+      Tags:
+        - Key: Name
+          Value: AdminServer
