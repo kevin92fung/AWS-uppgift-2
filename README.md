@@ -942,26 +942,20 @@ Se till att AWS CLI är korrekt konfigurerat och att du har de nödvändiga rät
 
 ```bash
 #!/bin/bash
-
-# Deploy script to create the WordPress environment using CloudFormation
-
-# Define the admin IP address. Change this to your specific admin IP.
-ADMIN_IP="213.321.3.321/32"  # Replace with your actual IP address
-
-# Execute the CloudFormation deploy command
+#change the value of the parameters for your wp env.
 aws cloudformation deploy \
   --template-file CloudFormation.yaml \
   --stack-name uppgift2 \
   --parameter-overrides \
-    AdminIP=$ADMIN_IP \
+    AdminIP=0.0.0.0/0 \
     SSHKey=ssh \
-    MasterUsername=rds-username \
-    MasterUserPassword=kod-till-rds \
-    DBName=wordpressdb-namn \
-    WPTitle=wordpresstitel \
-    WPAdminUser=wordpress-user \
-    WPAdminPassword=wordpress-kod \
-    WPAdminEmail=admin@mail.se
+    MasterUsername=admin \
+    MasterUserPassword=Password123. \
+    DBName=wordpressdb \
+    WPTitle=Awsesome \
+    WPAdminUser=admin \
+    WPAdminPassword=password \
+    WPAdminEmail=sample@mail.com
 ```
 
 ### Påminnelse:
